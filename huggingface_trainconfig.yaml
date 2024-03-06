@@ -1,0 +1,35 @@
+model_name: 'huggingface'
+GPU_ID: 0
+ckpt_path: None
+mode: 'train'
+dataset:
+  data_dir: 'F:\yang_Projects\Datasets\Task1\pelvis'
+  batch_size: 2
+  val_batch_size: 1
+  train_number: 170
+  val_number: 1
+  normalize: 'scale1000'
+  normmin: -1000
+  normmax: 3000
+  rotate: False
+  
+train:
+  val_epoch_interval: 1 
+  num_epochs: 100
+  learning_rate: 0.0002
+  writeTensorboard: True
+  sample_range_lower: 50
+  sample_range_upper: 50
+  
+ddpm:
+  num_train_timesteps: 1000
+  num_inference_steps: 1000
+  num_channels: (64, 128, 256, 256)
+  attention_levels: (False, False, False, True)
+  num_res_units: 2
+  norm_num_groups: 32
+  num_head_channels: 32
+
+visualize:
+  x_lower_limit: -1000
+  x_upper_limit: 3000
