@@ -62,9 +62,9 @@ class monai_loader:
             val_ds = [{indicator_A: i, indicator_B: j, 'mask': k, 'A_paths': i, 'B_paths': j, 'mask_path': k} 
                     for i, j, k in zip(source_file_list[-val_number:], target_file_list[-val_number:], mask_file_list[-val_number:])]
         else:
-            train_ds = [{indicator_A: i, indicator_B: j, 'A_paths': i, 'B_paths': j} 
+            train_ds = [{indicator_A: i, indicator_B: j} 
                         for i, j in zip(source_file_list[0:train_number], target_file_list[0:train_number])]
-            val_ds = [{indicator_A: i, indicator_B: j, 'A_paths': i, 'B_paths': j} 
+            val_ds = [{indicator_A: i, indicator_B: j} 
                     for i, j in zip(source_file_list[-val_number:], target_file_list[-val_number:])]
 
         print('all files in dataset:',len(file_list))
@@ -80,22 +80,6 @@ class monai_loader:
         transformations_crop=Compose(transformations_crop)
         train_crop_ds = monai.data.Dataset(data=train_ds, transform=transformations_crop)
         val_crop_ds = monai.data.Dataset(data=val_ds, transform=transformations_crop)
-
-        '''if center_crop>0:
-            crop=Compose([LoadImaged(keys=[indicator_A, indicator_B, "mask"]),
-                        EnsureChannelFirstd(keys=[indicator_A, indicator_B, "mask"]),
-                        CenterSpatialCropd(keys=[indicator_A, indicator_B, "mask"], roi_size=(-1,-1,center_crop)),
-                        
-                        ])
-            train_crop_ds = monai.data.Dataset(data=train_ds, transform=crop)
-            val_crop_ds = monai.data.Dataset(data=val_ds, transform=crop)
-            print('center crop:',center_crop)
-        else:
-            crop=Compose([LoadImaged(keys=[indicator_A, indicator_B, "mask"]),
-                EnsureChannelFirstd(keys=[indicator_A, indicator_B, "mask"]),
-                ])
-            train_crop_ds = monai.data.Dataset(data=train_ds, transform=crop)
-            val_crop_ds = monai.data.Dataset(data=val_ds, transform=crop)'''
 
         # load volumes
         train_volume_ds = monai.data.Dataset(data=train_crop_ds, transform=train_transforms) 

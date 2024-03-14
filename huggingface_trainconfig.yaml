@@ -12,7 +12,8 @@ dataset:
   normmin: -1000
   normmax: 3000
   rotate: False
-  
+  indicator_A: "images"
+  indicator_B: "targets"
 train:
   val_epoch_interval: 1 
   num_epochs: 100

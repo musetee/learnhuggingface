@@ -24,7 +24,7 @@ class TrainingConfig:
     save_image_epochs = 10
     save_model_epochs = 30
     mixed_precision = "fp16"  # `no` for float32, `fp16` for automatic mixed precision
-    output_dir = "ddpm-butterflies-128"  # the model name locally and on the HF Hub
+    output_dir = "learn_huggingface"  # the model name locally and on the HF Hub
 
     push_to_hub = True  # whether to upload the saved model to the HF Hub
     hub_private_repo = False
@@ -72,7 +72,9 @@ def get_full_repo_name(model_id: str, organization: str = None, token: str = Non
         return f"{organization}/{model_id}"
 
 
-def train_loop(config, model, noise_scheduler, optimizer, train_dataloader, lr_scheduler):
+def train_loop(config, model, noise_scheduler, optimizer, train_dataloader, lr_scheduler, device = f"cuda:0"):
+    
+    
     # Initialize accelerator and tensorboard logging
     accelerator = Accelerator(
         mixed_precision=config.mixed_precision,
@@ -87,30 +89,35 @@ def train_loop(config, model, noise_scheduler, optimizer, train_dataloader, lr_s
         elif config.output_dir is not None:
             os.makedirs(config.output_dir, exist_ok=True)
         accelerator.init_trackers("train_example")
-
+        
+    #accelerator = accelerator.to(device)
+    #model = model.to(device)
+    
+    
     # Prepare everything
     # There is no specific order to remember, you just need to unpack the
     # objects in the same order you gave them to the prepare method.
     model, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, lr_scheduler
     )
-
+    model = model.to(device)
+    
     global_step = 0
 
     # Now you train the model
     for epoch in range(config.num_epochs):
-        progress_bar = tqdm(total=len(train_dataloader), disable=not accelerator.is_local_main_process)
-        progress_bar.set_description(f"Epoch {epoch}")
+        #progress_bar = tqdm(total=len(train_dataloader), disable=not accelerator.is_local_main_process)
+        #progress_bar.set_description(f"Epoch {epoch}")
 
         for step, batch in enumerate(train_dataloader):
-            clean_images = batch["images"]
+            clean_images = batch["images"].to(device)
             # Sample noise to add to the images
-            noise = torch.randn(clean_images.shape).to(clean_images.device)
+            noise = torch.randn(clean_images.shape).to(device)
             bs = clean_images.shape[0]
 
             # Sample a random timestep for each image
             timesteps = torch.randint(
-                0, noise_scheduler.config.num_train_timesteps, (bs,), device=clean_images.device
+                0, noise_scheduler.config.num_train_timesteps, (bs,), device=device
             ).long()
 
             # Add noise to the clean images according to the noise magnitude at each timestep
@@ -128,9 +135,9 @@ def train_loop(config, model, noise_scheduler, optimizer, train_dataloader, lr_s
                 lr_scheduler.step()
                 optimizer.zero_grad()
 
-            progress_bar.update(1)
+            #progress_bar.update(1)
             logs = {"loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0], "step": global_step}
-            progress_bar.set_postfix(**logs)
+            #progress_bar.set_postfix(**logs)
             accelerator.log(logs, step=global_step)
             global_step += 1
 
@@ -156,6 +163,12 @@ if __name__ == '__main__':
     my_paths=config_path(model_name_path)
     monailoader=monai_loader(opt,my_paths) 
     train_loader=monailoader.train_loader
+    train_volume_ds=monailoader.train_volume_ds
+    
+    #slice_number,batch_number=monailoader.len_patchloader(train_volume_ds,opt.dataset.batch_size)
+    device = torch.device(f'cuda:{opt.GPU_ID}' if torch.cuda.is_available() else 'cpu')
+    print("Device:", torch.cuda.get_device_name(device))
+    
     model = UNet2DModel(
         sample_size=512,  # the target image resolution
         in_channels=1,  # the number of input channels, 3 for RGB images
@@ -180,10 +193,14 @@ if __name__ == '__main__':
         ),
     )
     
-    sample_image = next(iter(train_loader))['source']
+    model = model.to(device)
+    #sample_image = next(iter(train_loader))['source']
     #print("Input shape:", sample_image.shape)
     #print("Output shape:", model(sample_image, timestep=0).sample.shape)
-    
+    for i, batch in enumerate(train_loader):
+        sample_image = batch['images'].to(device)
+        print("Input shape:", sample_image.shape)
+        break
     
     noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
     
@@ -215,6 +232,6 @@ if __name__ == '__main__':
     
     from accelerate import notebook_launcher
 
-    args = (config, model, noise_scheduler, optimizer, train_loader, lr_scheduler)
+    args = (config, model, noise_scheduler, optimizer, train_loader, lr_scheduler, device)
 
     notebook_launcher(train_loop, args, num_processes=1)
