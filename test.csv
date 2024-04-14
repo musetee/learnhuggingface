@@ -1,0 +1,3 @@
+path_to_image,modality,tissue
+D:\Projects\data\Task1\pelvis\1PC098\ct.nii.gz,ct,pelvis
+D:\Projects\data\Task1\brain\1BA001\mr.nii.gz,mr,brain
