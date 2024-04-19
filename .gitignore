@@ -1,4 +1,6 @@
 !.gitignore
-/logs
-/results
-/learn_huggingface
+logs
+results
+learn_huggingface
+datafolder
+src

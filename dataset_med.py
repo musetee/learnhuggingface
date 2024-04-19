@@ -56,21 +56,7 @@ def make_dataset_synthrad(dir, modality='ct'):
                         images.append(path)
     return images
 
-def write_synthrad_csv(med_info_pairs={"root": "path/to/data", "modality": "ct", "tissue": "pelvis"}):
-    with open('data.csv', 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['path_to_image', 'modality', 'tissue'])  # Writing the headers
-
-        for med_info in med_info_pairs:
-            root = med_info["root"]
-            modality = med_info["modality"]
-            tissue = med_info["tissue"]
-            images = make_dataset_synthrad(root, modality)
-
-            for image_path in images:
-                writer.writerow([image_path, modality, tissue])
-
-
+# load dataset according to the folder structure and the modality information
 class ImageDataset(Dataset):
     def __init__(self, root, modality='ct', tissue='pelvis', transform=None, load_patient_number=1):
         self.imgs_paths = sorted(make_dataset_synthrad(root, modality))
@@ -109,7 +95,22 @@ class ImageDataset(Dataset):
 
     def __len__(self):
         return self.all_slices.shape[0]
-    
+
+def write_synthrad_csv(med_info_pairs={"root": "path/to/data", "modality": "ct", "tissue": "pelvis"}):
+    with open('data.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['path_to_image', 'modality', 'tissue'])  # Writing the headers
+
+        for med_info in med_info_pairs:
+            root = med_info["root"]
+            modality = med_info["modality"]
+            tissue = med_info["tissue"]
+            images = make_dataset_synthrad(root, modality)
+
+            for image_path in images:
+                writer.writerow([image_path, modality, tissue])
+
+# load dataset according to the csv file
 class MedImageDataset(Dataset):
     def __init__(self, csv_file, transform=None):
         """
@@ -152,7 +153,7 @@ from monai.transforms import (
     ScaleIntensity,
 )
 
-def get_data_loader_folder(csv_file, batch_size, height=256, width=256, drop_last=False, num_workers=None, load_patient_number=1):
+def get_data_loader_folder(csv_file, batch_size, height=256, width=256, drop_last=False, num_workers=None, ifsplit=False):
     WINDOW_LEVEL,WINDOW_WIDTH = 50, 800
     min, max=WINDOW_LEVEL-(WINDOW_WIDTH/2), WINDOW_LEVEL+(WINDOW_WIDTH/2)
     transform_list = []
@@ -164,28 +165,82 @@ def get_data_loader_folder(csv_file, batch_size, height=256, width=256, drop_las
     transform = Compose(transform_list)
 
     dataset = MedImageDataset(csv_file, transform=transform)
-    length = len(dataset)
-    train_size = int(0.9 * len(dataset))
-    val_size = len(dataset) - train_size
-    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
-
     if num_workers is None:
-        num_workers = 0
-    train_loader = DataLoader(dataset=dataset, 
+            num_workers = 0
+    if not ifsplit:
+        train_loader = DataLoader(dataset=dataset, 
                         batch_size=batch_size, 
                         drop_last=drop_last, 
                         num_workers=num_workers, 
                         #sampler=InfiniteSamplerWrapper(dataset), 
                         #collate_fn=collate_fn
                         )
-    val_loader = DataLoader(dataset=val_dataset,
-                        batch_size=batch_size,
-                        drop_last=drop_last,
-                        num_workers=num_workers,
-                        #sampler=InfiniteSamplerWrapper(dataset),
-                        #collate_fn=collate_fn
-                        )
+        val_loader = None
+    else:
+        train_size = int(0.9 * len(dataset))
+        val_size = len(dataset) - train_size
+        train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+        train_loader = DataLoader(dataset=train_dataset, 
+                            batch_size=batch_size, 
+                            drop_last=drop_last, 
+                            num_workers=num_workers, 
+                            #sampler=InfiniteSamplerWrapper(dataset), 
+                            #collate_fn=collate_fn
+                            )
+        val_loader = DataLoader(dataset=val_dataset,
+                            batch_size=batch_size,
+                            drop_last=drop_last,
+                            num_workers=num_workers,
+                            #sampler=InfiniteSamplerWrapper(dataset),
+                            #collate_fn=collate_fn
+                            )
     return train_loader, val_loader
+
+# save the images in the dataset to a folder in the following form:
+# folder/train/metadata.jsonl
+# folder/train/0001.png
+# folder/train/0002.png
+
+#{"file_name": "0001.png", "additional_feature": "This is a first value of a text feature you added to your images"}
+#{"file_name": "0002.png", "additional_feature": "This is a second value of a text feature you added to your images"}
+
+from monai.transforms import SaveImage
+import json
+from tqdm import tqdm
+def ConvertDatasetToRGB(output_dir= 'datafolder/train'):
+    os.makedirs(output_dir, exist_ok=True)
+    loader, _ = get_data_loader_folder("test.csv", 1, 512, 512, True, 0, False)
+    # The metadata file
+    metadata_file = os.path.join(output_dir, 'metadata.jsonl')
+    loader_length = len(loader)
+    idx = 0
+    # Open the metadata file
+    with open(metadata_file, 'w') as f:
+        for batch in tqdm(loader):
+            img = batch['img']
+            text = batch['text']
+            saved_name = f"{idx:04d}.png"
+
+            fig = plt.figure() #, figsize=(5, 4))
+            plt.gca().set_axis_off()
+            plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, 
+                        hspace = 0, wspace = 0)
+            plt.margins(0,0)
+            plt.imshow(img[0,:,:,0].permute(1,0), cmap='gray')
+            plt.savefig(os.path.join(output_dir,saved_name), bbox_inches='tight', pad_inches=0, dpi=100)
+            plt.close(fig)
+            # save the text to a json file
+            metadata_entry = {
+            "file_name": saved_name,
+            "additional_feature": text
+            }
+            f.write(json.dumps(metadata_entry) + '\n')  # Write as JSON Lines format
+            idx += 1
+            
+from datasets import load_dataset, Image
+def test_load_dataset(path="datafolder/train"):
+    dataset = load_dataset("imagefolder", data_dir=path, split="train")
+    print(dataset[0]["additional_feature"])
 
 import matplotlib.pyplot as plt
 def main():
@@ -206,7 +261,7 @@ def main():
     ]
     #write_synthrad_csv(med_info_pairs)
 
-    loader = get_data_loader_folder("test.csv", batch_size, height, width, True, num_workers, load_patient_number)
+    loader, _ = get_data_loader_folder("test.csv", batch_size, height, width, True, num_workers, False)
     for i, batch in enumerate(loader):
         print(f'Batch {i}')
         #print(len(batch['img']))
@@ -225,5 +280,5 @@ def main():
 if __name__=='__main__':
     #root = r'C:\Users\56991\Projects\Datasets\Task1\pelvis'
     #root = r'D:\Projects\data\Task1\pelvis'
-    main()
+    test_load_dataset()
     
