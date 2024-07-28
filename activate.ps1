@@ -1,0 +1,1 @@
+D:\Projects\Environments\huggingface\venv\Scripts\Activate.ps1
