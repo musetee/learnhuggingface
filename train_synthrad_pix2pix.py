@@ -620,6 +620,7 @@ def main():
 
     # In distributed training, the load_dataset function guarantees that only one local process can concurrently
     # download the dataset.
+    '''
     if args.dataset_name is not None:
         # Downloading and loading a dataset from the hub.
         dataset = load_dataset(
@@ -702,13 +703,7 @@ def main():
 
     def preprocess_train(examples):
         # Preprocess images.
-        preprocessed_images = preprocess_images(examples)
-        # Since the original and edited images were concatenated before
-        # applying the transformations, we need to separate them and reshape
-        # them accordingly.
-        original_images, edited_images = preprocessed_images.chunk(2)
-        original_images = original_images.reshape(-1, 3, args.resolution, args.resolution)
-        edited_images = edited_images.reshape(-1, 3, args.resolution, args.resolution)
+        original_images = examples
 
         # Collate the preprocessed images into the `examples`.
         examples["original_pixel_values"] = original_images
@@ -724,20 +719,25 @@ def main():
             dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(range(args.max_train_samples))
         # Set the training transforms
         train_dataset = dataset["train"].with_transform(preprocess_train)
-
-    from synthrad_torch_dataset import SynthradDataset
+        
+        '''
+    def tokenize_captions(captions):
+        inputs = tokenizer(
+            captions, max_length=tokenizer.model_max_length, padding="max_length", truncation=True, return_tensors="pt"
+        )
+        return inputs.input_ids
+    from synthrad_huggingface_dataset import SynthradDataset
     json_file = "./logs/dataset_test.json"
-    dataset = SynthradDataset(json_file, mode='train', slice_axis=2)
-    train_dataset = dataset.with_transform(preprocess_train)
+    train_dataset = SynthradDataset(json_file, mode='train', slice_axis=2, tokenizer=tokenizer)
 
-    print("Length of dataset:", len(dataset))
+    print("Length of dataset:", len(train_dataset))
 
     def collate_fn(examples):
-        original_pixel_values = torch.stack([example["original_pixel_values"] for example in examples])
+        original_pixel_values = torch.stack([example["original_image"] for example in examples])
         original_pixel_values = original_pixel_values.to(memory_format=torch.contiguous_format).float()
-        edited_pixel_values = torch.stack([example["edited_pixel_values"] for example in examples])
+        edited_pixel_values = torch.stack([example["edited_image"] for example in examples])
         edited_pixel_values = edited_pixel_values.to(memory_format=torch.contiguous_format).float()
-        input_ids = torch.stack([example["input_ids"] for example in examples])
+        input_ids = torch.stack([example["edit_prompt"] for example in examples])
         return {
             "original_pixel_values": original_pixel_values,
             "edited_pixel_values": edited_pixel_values,

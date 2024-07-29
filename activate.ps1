@@ -1,1 +1,1 @@
-D:\Projects\Environments\huggingface\venv\Scripts\Activate.ps1
+D:\Projects\Environments\huggingface2\venv\Scripts\Activate.ps1

@@ -2,7 +2,9 @@ import SimpleITK as sitk
 import os
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset as torchDataset
+from torch.utils.data import DataLoader
+from datasets import Dataset as huggingfaceDataset
 from tqdm import tqdm
 from monai.transforms import ResizeWithPadOrCrop
 
@@ -87,34 +89,7 @@ def print_json_info(data_info):
         for entry in tqdm(data_info, desc="Calculating slice info"):
             print(entry['patient_name'])
 
-def main():
-
-    dataset_dir=r"D:\Projects\data\synthrad\train"
-    accepted_modalities = ["ct", "mr", "mask", "cbct"]
-    create_new_json = False
-    if create_new_json:
-        images_list = make_dataset_modality(dataset_dir, accepted_modalities, None)
-        create_metadata_jsonl(images_list, "./logs/dataset.json")
-    else:
-        json_file = "./logs/dataset_test.json"
-        dataset = read_metadata_jsonl(json_file)
-        print(f"Dataset length: {len(dataset)}")
-        print(dataset[0])
-        dataset = SynthradDataset(json_file, mode='train', slice_axis=2)
-        dataloader=DataLoader(dataset, batch_size=4, shuffle=True)
-
-        print("Length of dataset:", len(dataset))
-        for batch in dataloader:
-            data = batch["original_image"]
-            label = batch["edited_image"]
-            print(data.shape)
-            print(label.shape)
-            print(batch["edit_prompt"])
-            break
-            #print_json_info(dataset)
-
-
-class synthradDataset_old(Dataset):
+class synthradDataset_old(torchDataset):
     def __init__(self, file_ids, mode='train', transform_list=None, slice_axis=2):
         """
         Args:
@@ -219,7 +194,7 @@ class synthradDataset_old(Dataset):
         print('-------------------------------------------')
         pass
 
-class SynthradDataset(Dataset):
+class SynthradDataset(torchDataset):
     def __init__(self, json_path, mode='train', slice_axis=2):
         """
         Args:
@@ -256,7 +231,8 @@ class SynthradDataset(Dataset):
             num_slices = data_img.shape[self.slice_axis]
             for i in range(num_slices):
                 slice_info.append((entry, i))
-        print (f"slice info: {slice_info}")
+        with open(r".\logs\slice_info.json", 'w') as f:
+            json.dump(slice_info, f, indent=4)
         return slice_info
 
     def __len__(self):
@@ -421,4 +397,27 @@ if __name__ == "__main__":
         print(data.shape)
         print(label.shape)
         break'''
-    main()
+    dataset_dir=r"D:\Projects\data\synthrad\train"
+    accepted_modalities = ["ct", "mr", "mask", "cbct"]
+    create_new_json = False
+
+    if create_new_json:
+        images_list = make_dataset_modality(dataset_dir, accepted_modalities, None)
+        create_metadata_jsonl(images_list, "./logs/dataset.json")
+    else:
+        json_file = "./logs/dataset_test.json"
+        dataset = read_metadata_jsonl(json_file)
+        print(f"Dataset length: {len(dataset)}")
+        print(f"first element in the dataset: \n {dataset[0]}")
+        dataset = SynthradDataset(json_file, mode='train', slice_axis=2)
+        dataloader=DataLoader(dataset, batch_size=4, shuffle=True)
+
+        print("Length of dataset:", len(dataset))
+        for batch in dataloader:
+            data = batch["original_image"]
+            label = batch["edited_image"]
+            print(data.shape)
+            print(label.shape)
+            #print(batch["edit_prompt"])
+            break
+            #print_json_info(dataset)

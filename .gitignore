@@ -4,4 +4,6 @@ results
 learn_huggingface
 datafolder
 src
+__pycache__
 __pycache__*
+ckpt
