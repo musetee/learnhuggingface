@@ -500,7 +500,8 @@ def main():
     unet = UNet2DConditionModel.from_pretrained(
         args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision
     )
-
+    
+    
     # InstructPix2Pix uses an additional image for conditioning. To accommodate that,
     # it uses 8 channels (instead of 4) in the first (conv) layer of the UNet. This UNet is
     # then fine-tuned on the custom InstructPix2Pix dataset. This modified UNet is initialized
@@ -523,6 +524,7 @@ def main():
     vae.requires_grad_(False)
     text_encoder.requires_grad_(False)
 
+    
     # Create EMA for the unet.
     if args.use_ema:
         ema_unet = EMAModel(unet.parameters(), model_cls=UNet2DConditionModel, model_config=unet.config)

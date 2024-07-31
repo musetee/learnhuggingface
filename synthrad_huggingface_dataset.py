@@ -22,7 +22,7 @@ from typing import (
 
 VERBOSE = False
 class SynthradDataset(huggingfaceDataset):
-    def __init__(self, json_path, mode='train', slice_axis=2, tokenizer=None):
+    def __init__(self, json_path, mode='train', slice_axis=2, resolution=256, tokenizer=None):
         """
         Args:
             json_path (str): Path to the JSON file containing the dataset information.
@@ -45,7 +45,7 @@ class SynthradDataset(huggingfaceDataset):
         self.tokenizer = tokenizer
         self.data_info = self._load_json()
         self.slice_info = self._calculate_slice_info()
-
+        self.resolution = resolution
     def _load_json(self):
         with open(self.json_path, 'r') as file:
             data_info = json.load(file)
@@ -112,13 +112,13 @@ class SynthradDataset(huggingfaceDataset):
         edited_slice = torch.from_numpy(edited_slice).float()
         
         # Resize
-        resize = ResizeWithPadOrCrop(spatial_size=(512, 512), mode="minimum")
+        resize = ResizeWithPadOrCrop(spatial_size=(self.resolution, self.resolution), mode="minimum")
         original_slice = resize(original_slice)
         edited_slice = resize(edited_slice)
 
         # Duplicate the single channel to create a three-channel image
-        original_slice = original_slice.repeat(3, 1, 1)
-        edited_slice = edited_slice.repeat(3, 1, 1)
+        #original_slice = original_slice.repeat(3, 1, 1)
+        #edited_slice = edited_slice.repeat(3, 1, 1)
 
         single_item = {"original_image": original_slice, 
                  "edited_image": edited_slice,

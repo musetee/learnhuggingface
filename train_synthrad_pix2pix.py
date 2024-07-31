@@ -52,7 +52,7 @@ from diffusers.utils import check_min_version, deprecate, is_wandb_available
 from diffusers.utils.import_utils import is_xformers_available
 from diffusers.utils.torch_utils import is_compiled_module
 
-
+from adaptLayers import SingleChannelToThreeChannel, ThreeChannelToSingleChannel
 if is_wandb_available():
     import wandb
 
@@ -476,6 +476,7 @@ def main():
     if args.seed is not None:
         set_seed(args.seed)
 
+    print("accelerator is main process:", accelerator.is_main_process)
     # Handle the repository creation
     if accelerator.is_main_process:
         if args.output_dir is not None:
@@ -501,6 +502,12 @@ def main():
         args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision
     )
 
+    input_adapter = SingleChannelToThreeChannel()
+    for param in input_adapter.parameters():
+        print("requires_grad of input_adapter: ", param.requires_grad)
+    #input_adapter.requires_grad_(True)
+
+    #output_adapter = ThreeChannelToSingleChannel()
     # InstructPix2Pix uses an additional image for conditioning. To accommodate that,
     # it uses 8 channels (instead of 4) in the first (conv) layer of the UNet. This UNet is
     # then fine-tuned on the custom InstructPix2Pix dataset. This modified UNet is initialized
@@ -515,8 +522,8 @@ def main():
         new_conv_in = nn.Conv2d(
             in_channels, out_channels, unet.conv_in.kernel_size, unet.conv_in.stride, unet.conv_in.padding
         )
-        new_conv_in.weight.zero_()
-        new_conv_in.weight[:, :4, :, :].copy_(unet.conv_in.weight)
+        new_conv_in.weight.zero_() # Initializes the weights of the new convolutional layer to zero. This means all the filters in the new convolutional layer are initially set to zero.
+        new_conv_in.weight[:, :4, :, :].copy_(unet.conv_in.weight) # Dimension: [Out Channel, In Channel, Kernel Height, Kernel Width]. Here copies the weights from the original convolutional layer to the first 4 channels of the new convolutional layer.
         unet.conv_in = new_conv_in
 
     # Freeze vae and text_encoder
@@ -728,7 +735,7 @@ def main():
         return inputs.input_ids
     from synthrad_huggingface_dataset import SynthradDataset
     json_file = "./logs/dataset_test.json"
-    train_dataset = SynthradDataset(json_file, mode='train', slice_axis=2, tokenizer=tokenizer)
+    train_dataset = SynthradDataset(json_file, mode='train', slice_axis=2, resolution=args.resolution, tokenizer=tokenizer)
 
     print("Length of dataset:", len(train_dataset))
 
@@ -787,6 +794,9 @@ def main():
     text_encoder.to(accelerator.device, dtype=weight_dtype)
     vae.to(accelerator.device, dtype=weight_dtype)
 
+    input_adapter.to(accelerator.device, dtype=weight_dtype)
+    #output_adapter.to(accelerator.device, dtype=weight_dtype)
+     
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
     if overrode_max_train_steps:
@@ -855,7 +865,10 @@ def main():
                 # We want to learn the denoising process w.r.t the edited images which
                 # are conditioned on the original image (which was edited) and the edit instruction.
                 # So, first, convert images to latent space.
-                latents = vae.encode(batch["edited_pixel_values"].to(weight_dtype)).latent_dist.sample()
+                adapt_edited = input_adapter(batch["edited_pixel_values"].to(weight_dtype))
+                adapt_original = input_adapter(batch["original_pixel_values"].to(weight_dtype))
+                #print("adapted edited shape:", adapt_edited.shape)
+                latents = vae.encode(adapt_edited).latent_dist.sample()
                 latents = latents * vae.config.scaling_factor
 
                 # Sample noise that we'll add to the latents
@@ -874,7 +887,7 @@ def main():
 
                 # Get the additional image embedding for conditioning.
                 # Instead of getting a diagonal Gaussian here, we simply take the mode.
-                original_image_embeds = vae.encode(batch["original_pixel_values"].to(weight_dtype)).latent_dist.mode()
+                original_image_embeds = vae.encode(adapt_original.to(weight_dtype)).latent_dist.mode()
 
                 # Conditioning dropout to support classifier-free guidance during inference. For more details
                 # check out the section 3.2.1 of the original paper https://arxiv.org/abs/2211.09800.
@@ -959,6 +972,11 @@ def main():
                         accelerator.save_state(save_path)
                         logger.info(f"Saved state to {save_path}")
 
+                        #output_dir_input_adapter = os.path.join(args.output_dir, "input_adapter")
+                        #os.makedirs(output_dir_input_adapter, exist_ok=True)
+                        #torch.save(input_adapter.state_dict(), os.path.join(output_dir_input_adapter, "input_adapter.pt"))
+
+
             logs = {"step_loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
             progress_bar.set_postfix(**logs)
 
@@ -1015,6 +1033,7 @@ def main():
             variant=args.variant,
         )
         pipeline.save_pretrained(args.output_dir)
+
 
         if args.push_to_hub:
             upload_folder(
