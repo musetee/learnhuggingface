@@ -19,10 +19,14 @@ from typing import (
     Union,
     overload,
 )
-
+import os
 VERBOSE = False
 class SynthradDataset(huggingfaceDataset):
-    def __init__(self, json_path, mode='train', slice_axis=2, resolution=256, tokenizer=None):
+    def __init__(self, json_path, mode='train', 
+                 slice_axis=2, resolution=256, 
+                 tokenizer=None, 
+                 slice_info_file=None,
+                 use_saved_slice_info=False):
         """
         Args:
             json_path (str): Path to the JSON file containing the dataset information.
@@ -43,14 +47,25 @@ class SynthradDataset(huggingfaceDataset):
         self.mode = mode
         self.slice_axis = slice_axis
         self.tokenizer = tokenizer
-        self.data_info = self._load_json()
-        self.slice_info = self._calculate_slice_info()
+        self.slice_info_file = slice_info_file
         self.resolution = resolution
+
+        self.data_info = self._load_json()
+        if use_saved_slice_info and os.path.exists(self.slice_info_file):
+            self.slice_info = self._load_slice_info()
+        else:
+            self.slice_info = self._calculate_slice_info()
+
     def _load_json(self):
         with open(self.json_path, 'r') as file:
             data_info = json.load(file)
         return data_info
-
+    
+    def _load_slice_info(self):
+        with open(self.slice_info_file, 'r') as f:
+            slice_info = json.load(f)
+        return slice_info
+    
     def _calculate_slice_info(self):
         slice_info = []
         for entry in tqdm(self.data_info, desc="Calculating slice info"):
@@ -58,8 +73,9 @@ class SynthradDataset(huggingfaceDataset):
             num_slices = data_img.shape[self.slice_axis]
             for i in range(num_slices):
                 slice_info.append((entry, i))
-        with open(r".\logs\slice_info.json", 'w') as f:
-            json.dump(slice_info, f, indent=4)
+        if self.slice_info_file is not None:
+            with open(self.slice_info_file, 'w') as f:
+                json.dump(slice_info, f, indent=4)
         return slice_info
 
     def __len__(self):
@@ -92,11 +108,14 @@ class SynthradDataset(huggingfaceDataset):
         
         un_tokenized_prompt = entry['edit_prompt']
 
-        tokenized_prompt = self.tokenizer(
-            un_tokenized_prompt, max_length=self.tokenizer.model_max_length, padding="max_length", truncation=True, return_tensors="pt"
-        )
-        edit_prompt = tokenized_prompt.input_ids
-
+        if self.tokenizer is not None:
+            tokenized_prompt = self.tokenizer(
+                un_tokenized_prompt, max_length=self.tokenizer.model_max_length, padding="max_length", truncation=True, return_tensors="pt"
+            )
+            edit_prompt = tokenized_prompt.input_ids
+        else:
+            print("Tokenizer not provided. Please provide a tokenizer.")
+            edit_prompt = un_tokenized_prompt
          # Apply additional transforms if specified
 
         # Normalize
